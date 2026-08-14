@@ -89,6 +89,11 @@ button{
 button:hover{
     background:#555;
 }
+    /* NEW FEATURE: greys out the Spin button while a spin is in progress */
+button:disabled{
+    background:#999;
+    cursor:not-allowed;
+}
 
 #result{
     margin-top:20px;
@@ -124,10 +129,11 @@ input, select{
     <div id="wheel"></div>
 </div>
 
-<button onclick="spinWheel()">Spin</button>
-
-<div id="result"></div>
-
+<!-- NEW FEATURE: id="spinBtn" lets spinWheel() find and disable this button -->
+<button id="spinBtn" onclick="spinWheel()">Spin</button>
+ 
+<!-- NEW FEATURE: aria-live so screen readers announce the result automatically -->
+<div id="result" aria-live="polite"></div>
 <div class="controls">
 
     <h3>Add Activity</h3>
@@ -162,12 +168,25 @@ const colors = [
     "#f7b267",
     "#84dcc6"
 ];
+    
 
 let currentRotation = 0;
+    // NEW FEATURE (spin-lock): these two variables track whether a spin is
+// currently animating, so a second click can't schedule a second timer
+// that races the first one and briefly shows the wrong result.
+let isSpinning = false;
+let spinTimeoutId = null;
 
 function drawWheel(){
     const wheel = document.getElementById("wheel");
     wheel.innerHTML = "";
+    // NEW FEATURE: guard against building an invalid empty conic-gradient
+    // if the user removes every activity.
+    if(activities.length === 0){
+        wheel.style.background = "#eee";
+        updateList();
+        return;
+    }
 
     const angle = 360 / activities.length;
 
@@ -220,25 +239,73 @@ function spinWheel(){
         alert("Please add at least one activity.");
         return;
     }
+    // NEW FEATURE: ignore clicks while a spin is already in progress,
+    // instead of letting a second spin's timeout race the first one.
+    if(isSpinning) return;
 
     const wheel = document.getElementById("wheel");
     const result = document.getElementById("result");
+     const spinBtn = document.getElementById("spinBtn"); // NEW FEATURE
+    
+    // NEW FEATURE: lock the spin and visually disable the button
+    isSpinning = true;
+    spinBtn.disabled = true
 
-    const index = Math.floor(Math.random()*activities.length);
-    const angle = 360 / activities.length;
+    //New change 
+    const index = Math.floor(Math.random() * activities.length);
 
-    // Make selected slice stop at the top pointer
-    const target = 360 - (index * angle + angle/2);
+// Save the selected activity immediately
+const selectedActivity = activities[index];
 
-    currentRotation += 1080 + target;
+const angle = 360 / activities.length;
 
-    wheel.style.transform = `rotate(${currentRotation}deg)`;
+// Find the center of the selected slice
+const selectedAngle = index * angle + angle / 2;
 
-    result.textContent = "";
+// Where the selected slice needs to be
+// to stop under the pointer
+const targetRotation = 360 - selectedAngle;
 
-    setTimeout(()=>{
-        result.textContent = activities[index];
-    },3000);
+// Get the wheel's current rotation
+const currentMod =
+    (currentRotation % 360 + 360) % 360;
+
+// Calculate how much more the wheel needs to rotate
+let additionalRotation =
+    targetRotation - currentMod;
+
+// Make sure rotation is positive
+if(additionalRotation < 0){
+    additionalRotation += 360;
+}
+
+// Add 3 full rotations
+additionalRotation += 1080;
+
+// Update total rotation
+currentRotation += additionalRotation;
+
+// Spin the wheel
+wheel.style.transform =
+    `rotate(${currentRotation}deg)`;
+
+result.textContent = "";
+
+if(spinTimeoutId){
+    clearTimeout(spinTimeoutId);
+}
+
+spinTimeoutId = setTimeout(() => {
+
+    // Show the exact activity selected before spinning
+    result.textContent =
+        selectedActivity;
+
+    isSpinning = false;
+    spinBtn.disabled = false;
+    spinTimeoutId = null;
+
+}, 3000);
 }
 
 function addActivity(){
@@ -252,7 +319,8 @@ function addActivity(){
 
 function removeActivity(){
     const list = document.getElementById("activityList");
-    if(activities.length===0) return;
+   // NEW FEATURE: also bail out if nothing is selected (empty value)
+    if(activities.length===0 || list.value==="") return;
     activities.splice(parseInt(list.value),1);
     drawWheel();
 }
